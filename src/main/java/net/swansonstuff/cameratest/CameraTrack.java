@@ -10,6 +10,11 @@ import java.awt.geom.Rectangle2D;
 import java.awt.geom.Rectangle2D.Double;
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -68,11 +73,41 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	}
 	
 	public void run(String[] args) throws Exception{
+		
+		/*
 		HttpURLConnection cameraUrl = (HttpURLConnection) new URL("http://192.168.102.14/axis-cgi/mjpg/video.cgi").openConnection();
 		cameraUrl.setUseCaches(false);
 		MjpegFrameParser parser = new MjpegFrameParser(cameraUrl.getInputStream());
-		parser.addMjpegParserListener(this);
-		parser.start();
+		*/
+		
+		String streamName = "/home/dan/Downloads/mogulus-user-files_chfirstassemblyalexandria_2014_03_30_64148841-4684-4854-be76-33406adc3c8c.mp4";
+		String fileName = "/home/dan/stream.mjpeg";
+		
+		ImageStreamReader isr = new ImageStreamReader(fileName, this);
+		isr.start();
+		
+		String cmd = "ffmpeg -probesize 32768 -i '"+streamName+"' '"+fileName+"'";
+		System.out.println("Running: "+cmd);
+		Process transcoder = Runtime.getRuntime().exec(cmd);
+		
+		while (true) {
+			try {
+				int exitValue = transcoder.exitValue();
+				System.out.println("Got exit code "+exitValue);
+				BufferedReader br = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
+				String output;
+				while ((output = br.readLine()) != null) {
+						System.out.println(output);
+				}
+				break;
+			} catch(IllegalThreadStateException e) {
+				// Means we're still running
+				System.out.println("waiting for process to end..");
+				Thread.sleep(1000);
+			}
+		}
+		
+		isr.shutdown();
 	}
 	
 	public void setSensitivitySetting(int sensitivitySetting) {
