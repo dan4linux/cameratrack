@@ -80,23 +80,32 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		MjpegFrameParser parser = new MjpegFrameParser(cameraUrl.getInputStream());
 		*/
 		
-		String streamName = "/home/dan/Downloads/mogulus-user-files_chfirstassemblyalexandria_2014_03_30_64148841-4684-4854-be76-33406adc3c8c.mp4";
-		String fileName = "/home/dan/stream.mjpeg";
-		
-		ImageStreamReader isr = new ImageStreamReader(fileName, this);
-		isr.start();
-		
-		String cmd = "ffmpeg -probesize 32768 -i '"+streamName+"' '"+fileName+"'";
+		String streamName = args[0];;
+		if ((args == null) || (args.length < 1) && (args[0].equals(""))) {
+			System.err.println("Unable to start: Stream source required.");
+			System.exit(1);
+		}
+		String fileName = "pipe:1";
+
+		String cmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg "+fileName;
 		System.out.println("Running: "+cmd);
 		Process transcoder = Runtime.getRuntime().exec(cmd);
+
+		ImageStreamReader isr = new ImageStreamReader(transcoder.getInputStream(), this);
+		isr.start();
+		
 		
 		while (true) {
 			try {
+				String output;
+/*				while ((output = brStdOut.readLine()) != null) {
+						System.out.println(output);
+				}
+*/
 				int exitValue = transcoder.exitValue();
 				System.out.println("Got exit code "+exitValue);
-				BufferedReader br = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
-				String output;
-				while ((output = br.readLine()) != null) {
+				BufferedReader brStdErr = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
+				while ((output = brStdErr.readLine()) != null) {
 						System.out.println(output);
 				}
 				break;
