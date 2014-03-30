@@ -108,6 +108,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		}
 		
 		isr.shutdown();
+		System.exit(0);
 	}
 	
 	public void setSensitivitySetting(int sensitivitySetting) {
