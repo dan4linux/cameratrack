@@ -3,24 +3,65 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>net.swansonstuff</groupId>
 	<artifactId>cameratest</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.1</version>
 
 	<dependencies>
 		<dependency>
 			<groupId>com.github.sarxos</groupId>
 			<artifactId>webcam-capture</artifactId>
-			<version>0.3.9</version>
+			<version>0.3.10-RC6</version>
 		</dependency>
 		<dependency>
 			<groupId>net.sf.jipcam</groupId>
 			<artifactId>jipcam</artifactId>
 			<version>0.9.1</version>
 		</dependency>
+		<dependency>
+			<groupId>org.openimaj</groupId>
+			<artifactId>faces</artifactId>
+			<version>1.1</version>
+		</dependency>
+
+		<!-- <dependency> <groupId>com.github.sarxos</groupId> <artifactId>lti-civil-no-swt</artifactId> 
+			<version>20070920-1721</version> </dependency> -->
+
 	</dependencies>
 	<repositories>
 		<repository>
-			<id>aj</id>
-			<url>http://ci.corp.adjuggler.net/artifactory/libs-release</url>
+			<id>sarxos-repo</id>
+			<url>http://repo.sarxos.pl/maven2</url>
+		</repository>
+		<repository>
+			<id>SarXos Repository 2</id>
+			<url>http://www.sarxos.pl/repo/maven2</url>
+		</repository>
+
+		<repository>
+			<id>jboss-public</id>
+			<name>JBoss Public Repository</name>
+			<url>http://repository.jboss.com/maven2</url>
+		</repository>
+		<repository>
+			<id>mvn-public</id>
+			<name>MVNRepository</name>
+			<url>http://mvnrepository.com</url>
+		</repository>
+		<repository>
+			<id>alfresco-public</id>
+			<name>Alfresco Public Repository</name>
+			<url>http://maven.alfresco.com/nexus/content/repositories/releases</url>
+		</repository>
+		<repository>
+			<id>OpenIMAJ maven repository</id>
+			<url>http://maven.openimaj.org/</url>
+		</repository>
+		<repository>
+			<id>Octopussy thirdparty maven repository</id>
+			<url>http://octopussy.ecs.soton.ac.uk/m2/thirdparty/</url>
+		</repository>
+		<repository>
+			<id>OpenIMAJ Snapshots maven repository</id>
+			<url>http://octopussy.ecs.soton.ac.uk/m2/snapshots/</url>
 		</repository>
 	</repositories>
 	<build>

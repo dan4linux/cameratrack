@@ -1,9 +1,11 @@
 package net.swansonstuff.cameratest;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.Rectangle;
+import java.awt.Stroke;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.geom.Rectangle2D;
@@ -17,6 +19,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Iterator;
+import java.util.List;
 
 import javax.swing.ButtonGroup;
 import javax.swing.GroupLayout;
@@ -30,11 +34,19 @@ import javax.swing.JTextField;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import org.openimaj.image.ImageUtilities;
+import org.openimaj.image.processing.face.detection.DetectedFace;
+import org.openimaj.image.processing.face.detection.HaarCascadeDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.github.sarxos.webcam.Webcam;
+import com.xuggle.mediatool.IMediaReader;
+import com.xuggle.mediatool.ToolFactory;
+
 import net.sf.jipcam.axis.MjpegFrame;
 import net.sf.jipcam.axis.MjpegFrameParser;
+import net.sf.jipcam.axis.MjpegInputStream;
 import net.sf.jipcam.axis.MjpegParserEvent;
 import net.sf.jipcam.axis.MjpegParserListener;
 
@@ -59,6 +71,11 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 	private WritableRaster lastRaster;
 	private WritableRaster currentRaster;
+	
+	private static final HaarCascadeDetector detector = new HaarCascadeDetector();
+	private List<DetectedFace> faces = null;
+	private static final Stroke STROKE = new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1.0f, new float[] { 1.0f }, 0.0f);
+
 
 	public CameraTrack(){
 		init();
@@ -74,12 +91,14 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	
 	public void run(String[] args) throws Exception{
 		
-		/*
+		// for ip camera
+		/* 
 		HttpURLConnection cameraUrl = (HttpURLConnection) new URL("http://192.168.102.14/axis-cgi/mjpg/video.cgi").openConnection();
 		cameraUrl.setUseCaches(false);
 		MjpegFrameParser parser = new MjpegFrameParser(cameraUrl.getInputStream());
 		*/
 		
+		// for video streams via ffmpeg
 		String streamName = args[0];;
 		if ((args == null) || (args.length < 1) && (args[0].equals(""))) {
 			System.err.println("Unable to start: Stream source required.");
@@ -87,23 +106,38 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		}
 		String fileName = "pipe:1";
 
-		String cmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg "+fileName;
-		System.out.println("Running: "+cmd);
-		Process transcoder = Runtime.getRuntime().exec(cmd);
-
-		ImageStreamReader isr = new ImageStreamReader(transcoder.getInputStream(), this);
-		isr.start();
+		String resolution = "320x240";
+		String sourceVideo4linux = "-f v4l2 -i /dev/video0";
+		//String sourceVideoFile = "-i /home/dan/Desktop/video-capture.mp4";
+		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
+		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -s "+resolution+"  "+fileName;
+		
+		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  "+fileName;
+		
+		IMediaReader reader = ToolFactory.makeReader("input.mpg");
+		
+		System.out.println("Running: "+usbCamCmd);
+		Process transcoder = Runtime.getRuntime().exec(usbCamCmd);
+		
+		//ImageStreamReader isr = new ImageStreamReader(transcoder.getInputStream(), this);
+		//isr.start();
 		
 		
 		while (true) {
 			try {
-				String output;
-/*				while ((output = brStdOut.readLine()) != null) {
-						System.out.println(output);
+				MjpegFrame frame;
+				//BufferedReader brStdOut = new BufferedReader(new InputStreamReader());
+				MjpegInputStream brStdOut = new MjpegInputStream(transcoder.getInputStream());
+				long startTime = System.currentTimeMillis();
+				while ((frame = brStdOut.readMjpegFrame()) != null) {
+						log.info("got frame in {}ms", System.currentTimeMillis() - startTime);
+						 processFrame(frame);
+						 startTime = System.currentTimeMillis();
 				}
-*/
+
 				int exitValue = transcoder.exitValue();
 				System.out.println("Got exit code "+exitValue);
+				String output;
 				BufferedReader brStdErr = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
 				while ((output = brStdErr.readLine()) != null) {
 						System.out.println(output);
@@ -116,7 +150,10 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			}
 		}
 		
-		isr.shutdown();
+		//isr.shutdown();
+		
+		
+
 		System.exit(0);
 	}
 	
@@ -125,9 +162,16 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	}
 	
 	private void processFrame(MjpegFrame frame) {
+			
+		
 		if (frame.getBytes().length > 0) {
 			BufferedImage bi = Utilities.toBufferedImage(frame.getImage());
-			processImage(bi);
+			if (bi != null) {
+				System.out.print("o");
+				processImage(bi);
+			} else {
+				System.out.print("x");
+			}
 		} else {
 			System.out.print("x");
 		}
@@ -144,6 +188,8 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			
 			BufferedImage newbi =  new BufferedImage(currentRaster.getWidth(), currentRaster.getHeight() - currentRaster.getMinY(), bi.getType());
 			Graphics2D graphics = newbi.createGraphics();
+			
+			drawFace(bi);
 			
 			graphics.drawImage(bi, 0, 0, currentRaster.getWidth(), currentRaster.getHeight(),
 					newbi.getMinX(), newbi.getMinY(), newbi.getWidth(), newbi.getHeight(), null
@@ -192,7 +238,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 					}
 
 					for (String c : deltaMap) {
-						System.out.print(c);
+						//System.out.print(c);
 					}
 					System.out.println(" Processing frame in "+(System.currentTimeMillis() - startTime)+"ms.  Difference("+diff+") is "+(100.0 * diff / DATA_BUCKETS )+"%");
 
@@ -208,7 +254,34 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			}
 	}
 
+	private void drawFace(BufferedImage bi) {
+		Graphics2D g2 = bi.createGraphics();
+		long startTime = System.currentTimeMillis();
+		faces = detector.detectFaces(ImageUtilities.createFImage(bi));
+		System.out.println(""+(System.currentTimeMillis() - startTime) +"ms to detect faces");
+		Iterator<DetectedFace> dfi = faces.iterator();
+		while (dfi.hasNext()) {
+
+			DetectedFace face = dfi.next();
+			org.openimaj.math.geometry.shape.Rectangle bounds = face.getBounds();
+
+			int dx = (int) (0.1 * bounds.width);
+			int dy = (int) (0.2 * bounds.height);
+			int x = (int) bounds.x - dx;
+			int y = (int) bounds.y - dy;
+			int w = (int) bounds.width + 2 * dx;
+			int h = (int) bounds.height + dy;
+
+			g2.setStroke(STROKE);
+			g2.setColor(Color.GREEN);
+			g2.drawRect(x, y, w, h);
+		}
+		g2.dispose();
+		
+	}
+
 	private int getMismatchedPixelCount(int allowedColorVariance, int startX, int regionWidth, WritableRaster rasterA, WritableRaster rasterB) {
+		log.debug("[getMismatchedPixelCount] rasterA is {} x {}, rasterB is {} x {}", rasterA.getWidth() - rasterA.getMinX(), rasterA.getHeight() - rasterA.getMinY(), rasterB.getWidth() - rasterB.getMinX(), rasterB.getHeight() - rasterB.getMinY());
 		byte[] currentRGB;
 		byte[] previousRGB;
 		int offPixels = 0;
@@ -227,7 +300,8 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 							offPixels++;
 						}
 					} catch(Exception e) {
-						log.error("[getMismatchedPixelCount] caught exception {} comparing pixels", e.getMessage(), e);
+						log.error("[getMismatchedPixelCount] caught exception {} comparing pixels {} {}", e.getMessage(), leftEdge, y, rightEdge, e);
+						return offPixels;
 					}
 				}
 			}

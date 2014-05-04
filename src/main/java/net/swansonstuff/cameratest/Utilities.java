@@ -15,6 +15,11 @@ import java.awt.image.ImageObserver;
 public class Utilities {
 		
 	public static BufferedImage toBufferedImage(Image img) {
+		
+		if (img == null) {
+			return null;
+		}
+		
 		if (img instanceof BufferedImage) {
 			return (BufferedImage) img;
 		}
