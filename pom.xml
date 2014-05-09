@@ -85,7 +85,7 @@
 									<mainClass>net.swansonstuff.cameratest.CameraTrack</mainClass>
 								</transformer>
 							</transformers>
-							<minimizeJar>true</minimizeJar>
+							<!-- <minimizeJar>true</minimizeJar> -->
 							<filters>
 								<filter>
 									<artifact>*:*</artifact>
