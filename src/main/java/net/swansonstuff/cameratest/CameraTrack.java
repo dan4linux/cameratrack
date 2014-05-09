@@ -14,8 +14,10 @@ import java.awt.event.MouseListener;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.Rectangle2D.Double;
 import java.awt.image.BufferedImage;
+import java.awt.image.RasterFormatException;
 import java.awt.image.WritableRaster;
 import java.io.BufferedReader;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -147,10 +149,10 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		String resolution = "640x480";
 		String sourceVideo4linux = "-f v4l2 -i /dev/video0";
-		//String sourceVideoFile = "-i /home/dan/Desktop/video-capture.mp4";
-		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
+		String sourceVideoFile = "-i http://clipdownload.livestream.com/mogulus-user-files/chfirstassemblyalexandria/2013/12/22/dea9c13d-5a18-42b5-8725-e56c5f311c98.mp4/ac662c5bc242a22887b8bd427c3cfe3b/536C643A";
+		//String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
 		boolean resolutionFilter = false;
-		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -s "+resolution : "")+"  "+fileName;
+		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  "+fileName;
 
 		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  "+fileName;
 
@@ -186,6 +188,8 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 					System.out.print(output);
 				}
 				break;
+			} catch(EOFException ee) {
+				System.out.println("waiting for process to end..");
 			} catch(IllegalThreadStateException e) {
 				// Means we're still running
 				System.out.println("waiting for process to end..");
@@ -255,69 +259,87 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			Graphics2D biGraphics = bi.createGraphics();
 			biGraphics.setPaint(Color.RED);
 			biGraphics.draw(new Rectangle(0, top, bi.getWidth() - 1, halfBand * 2));
+			
+			// these should start reversed to intersect properly
+			int croppedImageXMin =  bi.getWidth();
+			int croppedImageXMax = 0;
 
 			if (!this.adjusting) {
 
 				currentRaster = (WritableRaster) bi.getData(new Rectangle(0, top, bi.getWidth(), bottom - top));
-
-				BufferedImage newbi =  new BufferedImage(currentRaster.getWidth(), bottom - top, bi.getType());
-				Graphics2D newBiGraphics = newbi.createGraphics();
-
 				drawFace(bi);
 
-				newBiGraphics.drawImage(bi, 0, 0, currentRaster.getWidth(), currentRaster.getHeight(),
-						newbi.getMinX(), newbi.getMinY(), newbi.getWidth(), newbi.getHeight(), null
-						);
-
-				newBiGraphics.dispose();
-
-				int diff = 0;
 				int PIXEL_GROUP_SIZE = sensitivitySetting;
-				int DATA_BUCKETS = bi.getWidth() / PIXEL_GROUP_SIZE;
 
 				if (lastRaster != null) {		
 
-					if (lastRaster != null) {
 
-						biGraphics.setColor(Color.YELLOW);
-						int x = 0;
-						int yTop = verticalCenter - halfBand+1;
-						int yHeight = (halfBand * 2) - 1;
-						int xEnd = PIXEL_GROUP_SIZE - 1;
-						Rectangle2D changedArea = new Rectangle2D.Double();
-						int percentTotal = 0;
-						int boxCounter = 0;
+					biGraphics.setColor(Color.YELLOW);
+					int x = 0;
+					int yTop = verticalCenter - halfBand+1;
+					int yHeight = (halfBand * 2) - 1;
+					int xEnd = PIXEL_GROUP_SIZE - 1;
+					Rectangle2D changedArea = new Rectangle2D.Double();
+					int percentTotal = 0;
+					int boxCounter = 0;
 
-						while (x < bi.getWidth()) {
+					while (x < bi.getWidth()) {
 
-							int offPixelsPercent = getMismatchedPixelCount(allowedColorVariance, x, PIXEL_GROUP_SIZE, currentRaster, lastRaster);
-							percentTotal += offPixelsPercent;
-							boxCounter++;
+						int offPixelsPercent = getMismatchedPixelCount(allowedColorVariance, x, PIXEL_GROUP_SIZE, currentRaster, lastRaster);
+						percentTotal += offPixelsPercent;
+						boxCounter++;
 
-							if (offPixelsPercent > 75) {
-								if (x< 1) { x = 1; }
-								changedArea.setRect(x , yTop, xEnd, yHeight);
-								biGraphics.draw(changedArea);
-								diff++;
+						if (offPixelsPercent > 75) {
+							if (x< 1) { x = 1; }
+							changedArea.setRect(x , yTop, xEnd, yHeight);
+							biGraphics.draw(changedArea);
+							if (croppedImageXMin > x) {
+								croppedImageXMin = x;
 							}
-
-							x += PIXEL_GROUP_SIZE;
+							
+							croppedImageXMax = x + PIXEL_GROUP_SIZE ;
+							
 						}
 
-						System.out.printf(ANSI_RESTORE_POS+"Processing frame in %5sms.  Avg. Difference is %3d%%,  FPS=%d delay=%s", (System.currentTimeMillis() - startTime), (percentTotal * 100 / boxCounter), fps, manualFrameDelayMillis);
-
+						x += PIXEL_GROUP_SIZE;
 					}
+
+					System.out.printf(ANSI_RESTORE_POS+"Processing frame in %5sms.  Avg. Difference is %3d%%,  FPS=%d delay=%s", (System.currentTimeMillis() - startTime), (percentTotal / boxCounter), fps, manualFrameDelayMillis);
 
 				}
 
+				if (croppedImageXMax < croppedImageXMin) {
+					int tmp = croppedImageXMin;
+					croppedImageXMin = croppedImageXMax;
+					croppedImageXMax = tmp;
+				}
+				int newXWidth = croppedImageXMax - croppedImageXMin;
+				int aspect =  newXWidth * 100 / bi.getWidth();
+				int newHeight = bi.getHeight() * aspect / 100;
+				int newTop = verticalCenter - (newHeight / 2);
+				if (newTop < 0) {
+					newTop = 0;
+				}
+				if ((newTop + newHeight) > bi.getHeight()) {
+					newTop -=  (newTop + newHeight) - bi.getHeight();  
+				}
+				try {
+					Graphics2D g2d = bi.createGraphics();
+					g2d.drawImage(bi.getSubimage(croppedImageXMin, newTop, newXWidth, newHeight), 0, 0, null);
+					g2d.dispose();
+				} catch (RasterFormatException e) {
+					System.err.printf("\n%s: %d(%d), %d(%d)\n",e.getMessage(), croppedImageXMin, newXWidth, newTop, newHeight);
+				}
 			}
+			
 			biGraphics.dispose();
-
-			panel.setImage(bi);
-
+			
 			if (autoCalibration) {
 				calibrate();
 			}
+
+			panel.setImage(bi);
+
 		} catch(Throwable t) {
 			System.err.println("This is bad: "+ t.getMessage());
 			t.printStackTrace();
