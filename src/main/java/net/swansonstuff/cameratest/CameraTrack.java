@@ -2,12 +2,16 @@ package net.swansonstuff.cameratest;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Stroke;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -20,12 +24,17 @@ import java.io.BufferedReader;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -57,7 +66,43 @@ import net.sf.jipcam.axis.MjpegInputStream;
 import net.sf.jipcam.axis.MjpegParserEvent;
 import net.sf.jipcam.axis.MjpegParserListener;
 
-public class CameraTrack extends JFrame implements MjpegParserListener, ActionListener {
+public class CameraTrack extends JFrame implements MjpegParserListener, ActionListener, ComponentListener {
+	
+	class Settings {
+		
+		File settingsFile;
+		Properties props = new Properties();
+		
+		public Settings() {
+			try {
+				this.settingsFile = new File(System.getProperty("user.home")+"/camtest.prp");
+				props.load(new FileReader(settingsFile));
+			} catch (Exception e) {
+				log.error("Error loading settings: {}", e.getMessage());
+			}
+		}
+		
+		public void set(String key, String value) {
+			props.put(key, value);
+			save();
+		}
+		
+		public String get(String key) {
+			return get(key, "");
+		}
+
+		public String get(String key, String defaultValue) {
+			return props.getProperty(key, defaultValue);
+		}
+
+		public void save(){
+			try {
+				props.store(new FileOutputStream(settingsFile), null);
+			} catch (Exception e) {
+				log.error("Error saving settings: {}", e.getMessage());
+			}
+		}
+	}
 
 	class FrameCounter {
 		int lastFrameCount = 0;
@@ -103,9 +148,12 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	final FrameCounter fpsCounter = new FrameCounter();
 	int desiredFrameRate = 14;
 	int manualFrameDelayMillis = 0;
+	private final Settings settings;
+	int maxSensitivity = 0;
 
 
 	public CameraTrack(){
+		this.settings= new Settings(); 
 		init();
 	}
 
@@ -118,9 +166,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	}
 
 	public void run(String[] args) throws Exception{
-		
-		int lastFrameCount = 0;
-		
+				
 		Timer fpsMonitor = new Timer(true);
 		fpsMonitor.scheduleAtFixedRate(new TimerTask() {
 
@@ -147,16 +193,15 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		String streamName = args[0];
 		String fileName = "pipe:1";
 
+		boolean resolutionFilter = false;
 		String resolution = "640x480";
 		String sourceVideo4linux = "-f v4l2 -i /dev/video0";
-		String sourceVideoFile = "-i http://clipdownload.livestream.com/mogulus-user-files/chfirstassemblyalexandria/2013/12/22/dea9c13d-5a18-42b5-8725-e56c5f311c98.mp4/ac662c5bc242a22887b8bd427c3cfe3b/536C643A";
-		//String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
-		boolean resolutionFilter = false;
-		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  "+fileName;
+		//String sourceVideoFile = "-i http://clipdownload.livestream.com/mogulus-user-files/chfirstassemblyalexandria/2013/12/22/dea9c13d-5a18-42b5-8725-e56c5f311c98.mp4/ac662c5bc242a22887b8bd427c3cfe3b/536C643A";
+		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
+		//String sourceVideoFile = "-i /home/dan/Desktop/churchtest.mp4";
+		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
 
-		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  "+fileName;
-
-		IMediaReader reader = ToolFactory.makeReader("input.mpg");
+		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  -qscale "+fileName;
 
 		System.out.println("Running: "+usbCamCmd);
 		Process transcoder = Runtime.getRuntime().exec(usbCamCmd);
@@ -190,6 +235,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 				break;
 			} catch(EOFException ee) {
 				System.out.println("waiting for process to end..");
+				break;
 			} catch(IllegalThreadStateException e) {
 				// Means we're still running
 				System.out.println("waiting for process to end..");
@@ -202,11 +248,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 
 		System.out.println("Cleaning up...");
-		System.exit(0);
-	}
-
-	public void setSensitivitySetting(int sensitivitySetting) {
-		this.sensitivitySetting = sensitivitySetting;
+		//System.exit(0);
 	}
 
 	private void processFrame(MjpegFrame frame) {
@@ -289,7 +331,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 						percentTotal += offPixelsPercent;
 						boxCounter++;
 
-						if (offPixelsPercent > 75) {
+						if (offPixelsPercent > Math.abs(sensitivitySetting - (maxSensitivity / 2))) {
 							if (x< 1) { x = 1; }
 							changedArea.setRect(x , yTop, xEnd, yHeight);
 							biGraphics.draw(changedArea);
@@ -418,15 +460,20 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 	public void actionPerformed(ActionEvent e) {
 		if (e.getActionCommand().equals(MANUAL_CALIBRATION)) {
+			settings.set("calibration", "manual");
 			this.autoCalibration = false;
 		} else if (e.getActionCommand().equals(AUTO_CALIBRATION)) {
+			settings.set("calibration", "auto");
 			this.autoCalibration = true;
 		}
 	}
 
 	private void calibrate() {
-		//System.out.println("Calibrating");
 		lastRaster = currentRaster;
+	}
+
+	public void setSensitivitySetting(int sensitivitySetting) {
+		this.sensitivitySetting = sensitivitySetting;
 	}
 
 	private void setBandWidth(int i) {
@@ -446,6 +493,34 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	 * 
 	 */
 	private void init() {
+		setVisible(true);
+		setSize(435,658);
+
+		String size = settings.get("size", "");
+		if (!size.equals("")) {
+			String[] parts = size.split("x");
+			if (parts.length == 2) {
+				try {
+					setSize(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+				} catch(Exception e) {
+					// do nothing -- we tried
+				}
+			}
+		}
+		
+		String location = settings.get("location");
+		if (!location.equals("")) {
+			String[] parts = location.split("x");
+			if (parts.length == 2) {
+				try {
+					setLocation(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+				} catch(Exception e) {
+					// do nothing -- we tried
+				}
+			}
+		}
+		
+		addComponentListener(this);
 		setTitle("Camera Track");
 		getContentPane().add(panel);
 
@@ -463,13 +538,18 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		manualButton.setActionCommand(MANUAL_CALIBRATION);
 		manualButton.setBounds(18, 8, 134, 23);
 		manualButton.addActionListener(this);
+		if (settings.get("calibration").equals("manual")) {
+			manualButton.setSelected(true);
+		}
 		getContentPane().add(manualButton);
 
 		JRadioButton autoButton = new JRadioButton(AUTO_CALIBRATION);
 		autoButton.setActionCommand(AUTO_CALIBRATION);
 		autoButton.setBounds(18, 8, 134, 23);
 		autoButton.addActionListener(this);
-		autoButton.setSelected(true);
+		if (settings.get("calibration","auto").equals("auto")) {
+			autoButton.setSelected(true);
+		}
 		getContentPane().add(autoButton);
 
 		ButtonGroup group = new ButtonGroup();
@@ -478,12 +558,15 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		JLabel sensitivityLabel = new JLabel("Sensitivity");
 		getContentPane().add(sensitivityLabel);
-		JSlider sensitivityAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 50, sensitivitySetting);
+		setSensitivitySetting(Integer.parseInt(settings.get("sensitivity","50")));
+		maxSensitivity = 100;
+		JSlider sensitivityAdjustment = new JSlider(JSlider.HORIZONTAL, 1, maxSensitivity, Math.abs(sensitivitySetting - maxSensitivity));
 		sensitivityAdjustment.addChangeListener(new ChangeListener() {
 
 			public void stateChanged(ChangeEvent e) {
 				JSlider sensitivity = (JSlider) e.getSource();
 				int newSensitivity = sensitivity.getMaximum() - sensitivity.getValue();
+				settings.set("sensitivity", ""+newSensitivity);
 				setSensitivitySetting((newSensitivity > 0) ? newSensitivity : 1);
 			}
 		});
@@ -492,6 +575,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		JLabel bandwidthLabel = new JLabel("Band Height");
 		getContentPane().add(bandwidthLabel);
+		setBandWidth(Integer.parseInt(settings.get("bandwidth","50")));
 		JSlider bandWidthAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, bandWidth);
 		bandWidthAdjustment.setMajorTickSpacing(10);
 		bandWidthAdjustment.addChangeListener(new ChangeListener() {
@@ -499,6 +583,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			public void stateChanged(ChangeEvent e) {
 				JSlider bandWidth = (JSlider) e.getSource();
 				int newSensitivity = bandWidth.getValue();
+				settings.set("bandwidth", ""+newSensitivity);
 				setBandWidth((newSensitivity > 0) ? newSensitivity : 1);
 			}
 
@@ -508,7 +593,8 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		
 		JLabel bandPosLabel = new JLabel("Band Position");
 		getContentPane().add(bandPosLabel);
-		JSlider bandPosAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, 50);
+		setBandPosition(Integer.parseInt(settings.get("position", "50")));
+		JSlider bandPosAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, bandPos);
 		bandPosAdjustment.setMajorTickSpacing(10);
 		bandPosAdjustment.addMouseListener(new MouseAdapter() {
 			
@@ -528,6 +614,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			public void stateChanged(ChangeEvent e) {
 				JSlider bandWidth = (JSlider) e.getSource();
 				int newPosition = bandWidth.getValue();
+				settings.set("position", ""+newPosition);
 				setBandPosition((newPosition > 0) ? newPosition : 1);
 			}
 
@@ -538,6 +625,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		JLabel colorVarianceLabel = new JLabel("Color Variance");
 		getContentPane().add(colorVarianceLabel);
+		setAllowedColorVariance(Integer.parseInt(settings.get("colorshift", "50")));
 		JSlider colorVarianceAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 200, allowedColorVariance);
 		colorVarianceAdjustment.setMajorTickSpacing(10);
 		colorVarianceAdjustment.addChangeListener(new ChangeListener() {
@@ -545,6 +633,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			public void stateChanged(ChangeEvent e) {
 				JSlider colorVarianceAdjustment = (JSlider) e.getSource();
 				int newSensitivity = colorVarianceAdjustment.getValue();
+				settings.set("colorshift", ""+newSensitivity);
 				setAllowedColorVariance((newSensitivity > 0) ? newSensitivity : 1);
 			}
 
@@ -630,9 +719,27 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 								.addComponent(colorVarianceAdjustment)
 						));
 
-		setVisible(true);
-		setSize(435,658);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
+	}
+
+	@Override
+	public void componentResized(ComponentEvent e) {
+		Dimension size = this.getSize();
+		settings.set("size", ""+(int)size.getWidth()+"x"+(int)size.getHeight());
+	}
+
+	@Override
+	public void componentMoved(ComponentEvent e) {
+		Point point = this.getLocationOnScreen();
+		settings.set("location", ""+(int)point.getX()+"x"+(int)point.getY());
+	}
+
+	@Override
+	public void componentShown(ComponentEvent e) {
+	}
+
+	@Override
+	public void componentHidden(ComponentEvent e) {
 	}
 
 }
