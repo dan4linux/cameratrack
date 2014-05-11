@@ -200,11 +200,17 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
 		//String sourceVideoFile = "-i /home/dan/Desktop/churchtest.mp4";
 		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
-
 		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  -qscale "+fileName;
+		String cmd = "";
 
-		System.out.println("Running: "+usbCamCmd);
-		Process transcoder = Runtime.getRuntime().exec(usbCamCmd);
+		if (args[0].trim().toLowerCase().startsWith("/dev/")) {
+			cmd = "ffmpeg -f v4l2 -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
+		} else {
+			cmd = "ffmpeg -probesize 32768 -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
+		}
+
+		System.out.println("Running: "+cmd);
+		Process transcoder = Runtime.getRuntime().exec(cmd);
 
 		//ImageStreamReader isr = new ImageStreamReader(transcoder.getInputStream(), this);
 		//isr.start();
