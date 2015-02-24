@@ -186,7 +186,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		 */
 
 		// for video streams via ffmpeg
-		if ((args == null) || (args.length < 1) && (args[0].equals(""))) {
+		if (args == null || args.length < 1 || ((args.length > 0) && (args[0].trim().equals("")) ) ) {
 			System.err.println("Unable to start: Stream source required.");
 			System.exit(1);
 		}
@@ -204,7 +204,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		String cmd = "";
 
 		if (args[0].trim().toLowerCase().startsWith("/dev/")) {
-			cmd = "ffmpeg -f v4l2 -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
+			cmd = "ffmpeg -f v4l2 -video_size "+resolution+ " -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
 		} else {
 			cmd = "ffmpeg -probesize 32768 -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
 		}
@@ -373,7 +373,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 				}
 				try {
 					Graphics2D g2d = bi.createGraphics();
-					g2d.drawImage(bi.getSubimage(croppedImageXMin, newTop, newXWidth, newHeight), 0, 0, null);
+					//g2d.drawImage(bi.getSubimage(croppedImageXMin, newTop, newXWidth, newHeight), 0, 0, null);
 					g2d.dispose();
 				} catch (RasterFormatException e) {
 					System.err.printf("\n%s: %d(%d), %d(%d)\n",e.getMessage(), croppedImageXMin, newXWidth, newTop, newHeight);
@@ -500,7 +500,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	 */
 	private void init() {
 		setVisible(true);
-		setSize(435,658);
+		setSize(587,658);
 
 		String size = settings.get("size", "");
 		if (!size.equals("")) {
