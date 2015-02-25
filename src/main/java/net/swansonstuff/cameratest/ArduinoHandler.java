@@ -1,32 +1,37 @@
+package net.swansonstuff.cameratest;
 
 import gnu.io.CommPortIdentifier;
 import gnu.io.SerialPort;
 import gnu.io.SerialPortEvent;
 import gnu.io.SerialPortEventListener;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Enumeration;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author ericjbruno
  */
-public class ArduinoTest1 implements SerialPortEventListener {
+public class ArduinoHandler implements SerialPortEventListener {
     SerialPort serialPort = null;
+    private static final Logger log = LoggerFactory.getLogger(ArduinoHandler.class); 
+    
+    private static ArrayList<String> PORT_NAMES = new ArrayList<String>(){
+    	private static final long	serialVersionUID	= 1L;
 
-    
-    
-    private static final String PORT_NAMES[] = { 
-        "/dev/tty.usbmodem", // Mac OS X
-        "/dev/usbdev", // Linux
-        "/dev/tty", // Linux
-        "/dev/serial", // Linux
-    	"/dev/ttyACM0", //Linux
-        "COM3", // Windows
-    };
+    	{ 
+    		add("/dev/ttyACM0"); //Linux
+    		add("/dev/tty.usbmodem"); // Mac OS X
+    		add("/dev/usbdev"); // Linux
+    		//"/dev/tty", // Linux
+    		add("/dev/serial"); // Linux
+    		add("COM3"); // Windows
+    	}};
     
     private String appName;
-    private BufferedReader input;
     private OutputStream output;
     
     private static final int TIME_OUT = 1000; // Port open timeout
@@ -34,13 +39,13 @@ public class ArduinoTest1 implements SerialPortEventListener {
 
     public boolean initialize() {
         try {
-        	Enumeration portEnum = null;
+        	Enumeration<?> portEnum = null;
         	
         	for (String portName : PORT_NAMES) {
     			System.setProperty("gnu.io.rxtx.SerialPorts",portName);
         		portEnum = CommPortIdentifier.getPortIdentifiers();
         		if (portEnum != null && portEnum.hasMoreElements()) {
-        			System.out.println("Using port: "+portName);
+        			log.info("Using port: "+portName);
         			break;
         		}
         	}
@@ -49,12 +54,11 @@ public class ArduinoTest1 implements SerialPortEventListener {
 
             // Enumerate system ports and try connecting to Arduino over each
             //
-            System.out.println( "Trying:");
             while (portId == null && portEnum.hasMoreElements()) {
                 // Iterate through your host computer's serial port IDs
                 //
                 CommPortIdentifier currPortId = (CommPortIdentifier) portEnum.nextElement();
-                System.out.println( "   port" + currPortId.getName() );
+                log.info( "[initialize] Trying port" + currPortId.getName() );
                 for (String portName : PORT_NAMES) {
                     if ( currPortId.getName().equals(portName) 
                       || currPortId.getName().startsWith(portName)) {
@@ -64,14 +68,14 @@ public class ArduinoTest1 implements SerialPortEventListener {
                         // Open serial port
                         serialPort = (SerialPort)currPortId.open(appName, TIME_OUT);
                         portId = currPortId;
-                        System.out.println( "Connected on port" + currPortId.getName() );
+                        log.info( "[initialize] Connected on port" + currPortId.getName() );
                         break;
                     }
                 }
             }
         
             if (portId == null || serialPort == null) {
-                System.out.println("Oops... Could not connect to Arduino");
+            	log.error( "[initialize] Oops... Could not connect to Arduino");
                 return false;
             }
         
@@ -96,17 +100,14 @@ public class ArduinoTest1 implements SerialPortEventListener {
         return false;
     }
     
-    private void sendData(String data) {
+    public void sendData(String data) {
         try {
-            System.out.println("Sending data: '" + data +"'");
-            
-            // open the streams and send the "y" character
+            log.debug("[sendData] Sending data: '" + data +"'");            
             output = serialPort.getOutputStream();
             output.write( data.getBytes() );
         } 
         catch (Exception e) {
-            System.err.println(e.toString());
-            System.exit(0);
+            log.error(e.toString(), e);
         }
     }
 
@@ -124,17 +125,18 @@ public class ArduinoTest1 implements SerialPortEventListener {
     // Handle serial port event
     //
     public synchronized void serialEvent(SerialPortEvent oEvent) {
-        //System.out.println("Event received: " + oEvent.toString());
+        log.trace("[serialEvent] Event received: " + oEvent.toString());
         try {
             switch (oEvent.getEventType() ) {
                 case SerialPortEvent.DATA_AVAILABLE: 
-                    if ( input == null ) {
-                        input = new BufferedReader(
-                            new InputStreamReader(
-                                    serialPort.getInputStream()));
+                	int availableBytes = serialPort.getInputStream().available();
+                	byte[] readBuffer = new byte[availableBytes];
+                    if (availableBytes > 0) {
+                        // Read the serial port
+                    	serialPort.getInputStream().read(readBuffer, 0, availableBytes);
                     }
-                    String inputLine = input.readLine();
-                    System.out.println(inputLine);
+                    String inputLine = new String(readBuffer);
+                    System.out.print(inputLine);
                     break;
 
                 default:
@@ -142,21 +144,25 @@ public class ArduinoTest1 implements SerialPortEventListener {
             }
         } 
         catch (Exception e) {
-            System.err.println(e.toString());
+            log.error(e.toString(), e);
         }
     }
+    
+    public static void addPort(String portName) {
+    	PORT_NAMES.add(portName);
+    }
 
-    public ArduinoTest1() {
+    public ArduinoHandler() {
         appName = getClass().getName();
     }
     
     public static void main(String[] args) {
-    	System.out.println("Using: "+System.getProperty("java.library.path"));
-        ArduinoTest1 test = new ArduinoTest1();
+    	log.info("[main] Using: "+System.getProperty("java.library.path"));
+        ArduinoHandler test = new ArduinoHandler();
         if ( test.initialize() ) {
-            test.sendData("y");
+            test.sendData("180\n45\n");
             try { Thread.sleep(2000); } catch (InterruptedException ie) {}
-            test.sendData("n");
+            test.sendData("0\n");
             try { Thread.sleep(2000); } catch (InterruptedException ie) {}
             test.close();
         }

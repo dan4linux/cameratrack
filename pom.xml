@@ -25,6 +25,14 @@
 		<!-- <dependency> <groupId>com.github.sarxos</groupId> <artifactId>lti-civil-no-swt</artifactId> 
 			<version>20070920-1721</version> </dependency> -->
 
+	<dependency>
+		<groupId>local</groupId>
+		<artifactId>rxtx-serial</artifactId>
+		<version>2.1.7r2</version>
+		<scope>system</scope>
+		<systemPath>${project.basedir}/rxtx/RXTXcomm.jar</systemPath>
+	</dependency>
+
 	</dependencies>
 	<repositories>
 		<repository>
