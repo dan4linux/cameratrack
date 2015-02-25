@@ -20,7 +20,7 @@ public class ArduinoManager {
 	private static final Logger log = LoggerFactory.getLogger(ArduinoManager.class);
 	
 	private Timer timer;
-	private long delay = 250;
+	private long delay = 100;
 	int[] positions = new int[30];
 	int nextPosition = 0;
 	ArduinoHandler arduino;

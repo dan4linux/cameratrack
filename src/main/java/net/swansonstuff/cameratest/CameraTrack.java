@@ -363,9 +363,9 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 					if (leftEdgeOfChanges >= 0 && rightEdgeOfChanges >= leftEdgeOfChanges) {
 						int centerOfChanges = (rightEdgeOfChanges + leftEdgeOfChanges) / 2;					
 						int fieldPosition = 100 * centerOfChanges / boxCounter;
-						int servoPosition = (180 * 100) * fieldPosition / 100;
+						int servoPosition = (180) * fieldPosition / 100;
 						log.info("[processImage] new position: "+servoPosition);
-						//updatePosition(servoPosition);
+						updatePosition(servoPosition);
 					} else {
 						updatePosition(0);
 					}

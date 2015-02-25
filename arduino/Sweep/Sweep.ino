@@ -22,26 +22,19 @@ void setup()
 
 void loop() 
 { 
-  //  while (!Console);
-  //Serial.println("Send position followed by '\n'");
   if (Serial.available() > 0) {
     while (Serial.available() > 0) {
-      data = Serial.read();
-      if (data != '\n') {
-        if (isDigit(data)) {
-          input += (char)data;
+      data = Serial.read();   // read byte from port
+      if (data != '\n') {     // keep reaading until \n is reached
+        if (isDigit(data)) {  // ignore non-numeric data
+          input += (char)data;// rebuild data byte-by-byte
         }
       } else {
-        digitalWrite(13, HIGH);
-        delay(150);
-        digitalWrite(13, LOW);
-        // read the oldest byte in the serial buffer:
-        pos = input.toInt();
-        input = "";
+        pos = input.toInt();  // get int value of string int
+        input = "";           // reset buffer
         Serial.println(pos);
-        // if it's a capital H (ASCII 72), turn on the LED:
-        myservo.write(pos);              // tell servo to go to position in variable 'pos' 
-        delay(1000);                       // waits 15ms for the servo to reach the position       
+        myservo.write(pos);   // tell servo to go to position in variable 'pos'
+        delay(15);           // don't write too fast
       }
     }
   }
