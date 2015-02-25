@@ -103,8 +103,7 @@ public class ArduinoHandler implements SerialPortEventListener {
     public void sendData(String data) {
         try {
             log.debug("[sendData] Sending data: '" + data +"'");            
-            output = serialPort.getOutputStream();
-            output.write( data.getBytes() );
+            serialPort.getOutputStream().write( data.getBytes() );
         } 
         catch (Exception e) {
             log.error(e.toString(), e);

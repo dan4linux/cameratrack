@@ -150,10 +150,12 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	int manualFrameDelayMillis = 0;
 	private final Settings settings;
 	int maxSensitivity = 0;
+	private ArduinoManager arduino;
 
 
 	public CameraTrack(){
 		this.settings= new Settings(); 
+		this.arduino = ArduinoManager.getInstance();
 		init();
 	}
 
@@ -187,15 +189,14 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		// for video streams via ffmpeg
 		if (args == null || args.length < 1 || ((args.length > 0) && (args[0].trim().equals("")) ) ) {
-			System.err.println("Unable to start: Stream source required.");
-			System.exit(1);
+			args = new String[] {"/dev/video0"};
+			System.out.println("Using default Stream: "+args[0]);
 		}
 		String streamName = args[0];
 		String fileName = "pipe:1";
 
 		boolean resolutionFilter = false;
 		String resolution = "640x480";
-		String sourceVideo4linux = "-f v4l2 -i /dev/video0";
 		//String sourceVideoFile = "-i http://clipdownload.livestream.com/mogulus-user-files/chfirstassemblyalexandria/2013/12/22/dea9c13d-5a18-42b5-8725-e56c5f311c98.mp4/ac662c5bc242a22887b8bd427c3cfe3b/536C643A";
 		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
 		//String sourceVideoFile = "-i /home/dan/Desktop/churchtest.mp4";
@@ -330,6 +331,9 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 					Rectangle2D changedArea = new Rectangle2D.Double();
 					int percentTotal = 0;
 					int boxCounter = 0;
+					
+					int leftEdgeOfChanges = -1;
+					int rightEdgeOfChanges = -1;					
 
 					while (x < bi.getWidth()) {
 
@@ -338,6 +342,10 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 						boxCounter++;
 
 						if (offPixelsPercent > Math.abs(sensitivitySetting - (maxSensitivity / 2))) {
+							
+							if (leftEdgeOfChanges < 0) { leftEdgeOfChanges = boxCounter; }
+							rightEdgeOfChanges = boxCounter;
+							
 							if (x< 1) { x = 1; }
 							changedArea.setRect(x , yTop, xEnd, yHeight);
 							biGraphics.draw(changedArea);
@@ -351,8 +359,19 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 						x += PIXEL_GROUP_SIZE;
 					}
+					
+					if (leftEdgeOfChanges >= 0 && rightEdgeOfChanges >= leftEdgeOfChanges) {
+						int centerOfChanges = (rightEdgeOfChanges + leftEdgeOfChanges) / 2;					
+						int fieldPosition = 100 * centerOfChanges / boxCounter;
+						int servoPosition = (180 * 100) * fieldPosition / 100;
+						log.info("[processImage] new position: "+servoPosition);
+						//updatePosition(servoPosition);
+					} else {
+						updatePosition(0);
+					}
+					
 
-					System.out.printf(ANSI_RESTORE_POS+"Processing frame in %5sms.  Avg. Difference is %3d%%,  FPS=%d delay=%s", (System.currentTimeMillis() - startTime), (percentTotal / boxCounter), fps, manualFrameDelayMillis);
+					log.trace(String.format(ANSI_RESTORE_POS+"Processing frame in %5sms.  Avg. Difference is %3d%%,  FPS=%d delay=%s", (System.currentTimeMillis() - startTime), (percentTotal / boxCounter), fps, manualFrameDelayMillis));
 
 				}
 
@@ -392,6 +411,13 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			System.err.println("This is bad: "+ t.getMessage());
 			t.printStackTrace();
 		}
+	}
+
+	/**
+	 * @param servoPosition
+	 */
+	public void updatePosition(int servoPosition) {
+		arduino.updatePosition(servoPosition);
 	}
 
 	private void drawFace(BufferedImage bi) {
@@ -498,7 +524,8 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	/**
 	 * 
 	 */
-	private void init() {
+	private void init() {		
+		
 		setVisible(true);
 		setSize(587,658);
 

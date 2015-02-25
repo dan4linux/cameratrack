@@ -4,11 +4,13 @@
     <!-- encoders are assigned the type
          ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
     <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36}  %line - %msg%n</pattern>
     </encoder>
   </appender>
 
-  <root level="debug">
+  <root level="trace">
     <appender-ref ref="STDOUT" />
   </root>
+  <logger name="net.swansonstuff.cameratest.CameraTrack" level="debug"/>
+  <logger name="net.swansonstuff.cameratest.ArduinoManager" level="debug"/>
 </configuration>
