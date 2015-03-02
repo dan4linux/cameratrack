@@ -12,8 +12,9 @@ import org.slf4j.LoggerFactory;
 
 public class AppSettings {
 	
-		public static final String	SETTING_BAND_HEIGHT	= "band.height";
-		public static final String	SETTING_BAND_WIDTH	= "band.width";
+		public static final String SETTING_BAND_HEIGHT = "band.height";
+		public static final String SETTING_BAND_WIDTH = "band.width";
+		public static final String LAST_VIDEO_DEVICE = "last.video.device";
 
 
 		private Map<String, Runnable> callbacks = new HashMap<>();

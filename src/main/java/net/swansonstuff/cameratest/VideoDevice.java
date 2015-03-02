@@ -61,5 +61,10 @@ public class VideoDevice implements Serializable {
 	public void setSettings(Properties settings) {
 		this.settings = settings;
 	}
+	
+	@Override
+	public String toString() {
+		return String.format("%15s(%s)", (getName().length() > 15) ? getName().substring(0, 12) + "..." : getName(), getLocation());
+	}
 
 }

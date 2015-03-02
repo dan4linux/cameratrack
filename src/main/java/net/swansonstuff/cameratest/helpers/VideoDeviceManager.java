@@ -11,6 +11,8 @@ import java.io.InputStreamReader;
 import java.io.StringWriter;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Properties;
+import java.util.Vector;
 
 import net.swansonstuff.cameratest.VideoDevice;
 
@@ -25,7 +27,7 @@ import org.slf4j.LoggerFactory;
 public class VideoDeviceManager {
 	
 	public enum VideoDeviceManagerSubsystem {
-		v4l("video4linux", "v4l2-ctl", "--list-devices", "{} -c {}={}", "-d {} -l");
+		v4l("video4linux", "/usr/bin/v4l2-ctl", "--list-devices", "%s -c %s=%s", "-l -d %s");
 		
 		private String name;
 		private String command;
@@ -113,7 +115,7 @@ public class VideoDeviceManager {
 	}
 		
 	private static VideoDeviceManager instance;
-	private static final List<VideoDevice> deviceList = new LinkedList<>();
+	private static final Vector<VideoDevice> deviceList = new Vector<>();
 	private static final Logger log = LoggerFactory.getLogger(VideoDeviceManager.class);
 	private VideoDeviceManagerSubsystem subsystem;
 	private VideoDevice currentDevice;
@@ -132,6 +134,13 @@ public class VideoDeviceManager {
 			instance = new VideoDeviceManager();
 		}
 		return instance;
+	}
+	
+	/**
+	 * @return the deviceList
+	 */
+	public Vector<VideoDevice> retreiveDevices() {
+		return deviceList;
 	}
 	
 	/**
@@ -181,7 +190,6 @@ public class VideoDeviceManager {
 		
 	@SuppressWarnings("finally")
 	public boolean reinit() throws Exception {
-		sanityCheck();
 		try {
 			log.debug("[reinit] resetting device list");
 			Process cmdLine = Runtime.getRuntime().exec(new String[] {subsystem.command, subsystem.listArg});
@@ -189,6 +197,7 @@ public class VideoDeviceManager {
 			deviceList.clear();
 			readDevices(br, deviceList);
 			logError(cmdLine);
+			sanityCheck();
 			return true;
 		} catch (IOException e) {
 			log.error("[reinit]: {}", e.getMessage(), e);
@@ -218,7 +227,8 @@ dan@dan-Vostro-410 ~/Desktop $
 		String deviceName = "";
 		String deviceLocation = "";
 		while ((line = br.readLine())!= null) {
-			if ( ! line.startsWith(" ") ) {
+			log.trace("[readDevices] checking: {}", line);
+			if ( ! line.startsWith(" ") && ! line.startsWith("\t") ) {
 				// Not line that has common device name
 				line = line.trim();
 				if (line.length() < 1) {
@@ -233,12 +243,14 @@ dan@dan-Vostro-410 ~/Desktop $
 					deviceLocation = "";
 					continue;
 				} else {
-					// it's the line with the device location
-					deviceLocation = line;
+					// it's the line with the device name
+					log.trace("[readDevices] detected device name: {}", line);
+					deviceName = line;
 				}
 			} else {
-				// it's the line with the device name
-				deviceName = line.trim();
+				// it's the line with the device location
+				log.trace("[readDevices] detected device location: {}", line);
+				deviceLocation = line.trim();
 			}
 		}
 	}
@@ -247,11 +259,15 @@ dan@dan-Vostro-410 ~/Desktop $
 		return deviceList.size();
 	}
 
-	public void updateDeviceSetting(VideoDevice device, Object key, Object value) {
+	public void updateDeviceSetting(Object key, Object value) {
 		try {
-			log.info("[updateDeviceSetting] running {} {}", subsystem.command, String.format(subsystem.changeArg, device.getLocation(), key, value));
-			Process cmdLine = Runtime.getRuntime().exec(new String[] {subsystem.command, String.format(subsystem.changeArg, device.getLocation(), key, value)});
+			if (currentDevice == null) {
+				throw new IOException("currentDevice is not configured");
+			}
+			log.info("[updateDeviceSetting] running {} {}", subsystem.command, String.format(subsystem.changeArg, currentDevice.getLocation(), key, value));
+			Process cmdLine = Runtime.getRuntime().exec(new String[] {subsystem.command, String.format(subsystem.changeArg, currentDevice.getLocation(), key, value)});
 			logError(cmdLine);
+			loadDeviceSettings();
 		} catch (IOException e) {
 			log.error("[updateDeviceSetting] {}", e.getMessage(), e);
 		}
@@ -265,8 +281,51 @@ dan@dan-Vostro-410 ~/Desktop $
 		if (cmdLine.exitValue() > 0) {
 			BufferedReader br = new BufferedReader(new InputStreamReader(cmdLine.getErrorStream()));
 			StringWriter sw = new StringWriter();
-			while (sw.append(br.readLine()) != null) {}
-			log.error("[updateDeviceSetting] {}:{}; {}", sw.toString()); 
+			while (br.ready()) {
+				sw.append(br.readLine());
+			}
+			log.error("[logError] {}", sw.toString()); 
+		}
+	}
+
+	public Properties getDeviceSettings() {
+		if (currentDevice.getSettings().isEmpty()) {
+			loadDeviceSettings();
+		}
+		return currentDevice.getSettings();
+	}
+
+	private void loadDeviceSettings() {
+		try {
+			if (currentDevice == null) {
+				throw new Exception("currentDevice is not configured");
+			}
+			log.info("[loadDeviceSettings] running: {} {}", subsystem.command, String.format(subsystem.deviceOptions, currentDevice.getLocation()));
+			Process cmdLine = Runtime.getRuntime().exec((subsystem.command+" "+String.format(subsystem.deviceOptions, currentDevice.getLocation())).split(" +"));
+			cmdLine.waitFor();
+			BufferedReader br = new BufferedReader(new InputStreamReader(cmdLine.getInputStream()));
+			readDeviceSettings(br);
+			logError(cmdLine);
+		} catch (Exception e) {
+			log.error("[loadDeviceSettings] {}", e.getMessage(), e);
+		}
+	}
+
+	public void readDeviceSettings(BufferedReader br) throws IOException {
+		String line;
+		String[] parts;
+		while ((line = br.readLine())!= null) {
+			line = line.trim();
+			parts = line.split(" +");
+			if (parts.length > 1) {
+				for (String part : parts) {
+					if (part.startsWith("value=")) {
+						currentDevice.getSettings().put(parts[0], part.substring(6).trim());
+					}
+				}
+			} else {
+				log.warn("[readDeviceSettings] ignoring: {}", line);
+			}
 		}
 	}
 

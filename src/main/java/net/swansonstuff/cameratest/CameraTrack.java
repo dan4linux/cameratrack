@@ -12,6 +12,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentEvent;
 import java.awt.event.ComponentListener;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -39,6 +40,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 import javax.swing.ButtonGroup;
+import javax.swing.ComboBoxModel;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.GroupLayout;
 import javax.swing.GroupLayout.Alignment;
 import javax.swing.JButton;
@@ -47,8 +50,10 @@ import javax.swing.JLabel;
 import javax.swing.JRadioButton;
 import javax.swing.JSlider;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.ListDataListener;
 
 import org.openimaj.image.ImageUtilities;
 import org.openimaj.image.processing.face.detection.DetectedFace;
@@ -65,45 +70,22 @@ import net.sf.jipcam.axis.MjpegFrameParser;
 import net.sf.jipcam.axis.MjpegInputStream;
 import net.sf.jipcam.axis.MjpegParserEvent;
 import net.sf.jipcam.axis.MjpegParserListener;
+import net.swansonstuff.cameratest.helpers.CameraSettingsTabelModel;
+import net.swansonstuff.cameratest.helpers.FfmpegHelper;
+import net.swansonstuff.cameratest.helpers.TranscoderHelper;
+import net.swansonstuff.cameratest.helpers.VideoDeviceManager;
+
+import javax.swing.JPanel;
+import javax.swing.LayoutStyle.ComponentPlacement;
+import javax.swing.JComboBox;
+import javax.swing.JTable;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.JScrollPane;
+
+import java.awt.BorderLayout;
 
 public class CameraTrack extends JFrame implements MjpegParserListener, ActionListener, ComponentListener {
 	
-	class Settings {
-		
-		File settingsFile;
-		Properties props = new Properties();
-		
-		public Settings() {
-			try {
-				this.settingsFile = new File(System.getProperty("user.home")+"/camtest.prp");
-				props.load(new FileReader(settingsFile));
-			} catch (Exception e) {
-				log.error("Error loading settings: {}", e.getMessage());
-			}
-		}
-		
-		public void set(String key, String value) {
-			props.put(key, value);
-			save();
-		}
-		
-		public String get(String key) {
-			return get(key, "");
-		}
-
-		public String get(String key, String defaultValue) {
-			return props.getProperty(key, defaultValue);
-		}
-
-		public void save(){
-			try {
-				props.store(new FileOutputStream(settingsFile), null);
-			} catch (Exception e) {
-				log.error("Error saving settings: {}", e.getMessage());
-			}
-		}
-	}
-
 	class FrameCounter {
 		int lastFrameCount = 0;
 		public FrameCounter() {			
@@ -123,8 +105,9 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	 */
 	private static final Logger log = LoggerFactory.getLogger(CameraTrack.class);
 	private static final long	serialVersionUID	= 1L;
-	ImageImplement panel = new ImageImplement();
-	int bandWidth = 10;
+	ImageImplement imagePanel = new ImageImplement();
+	private int bandWidth = 300;
+	private int bandHeight = 10;
 	int bandPos = 50;
 	private int sensitivitySetting = 15;
 	int allowedColorVariance = 100;			
@@ -145,17 +128,21 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	public static final String ANSI_RESTORE_POS = "\u001B[u";
 	private int frameCounter = 0;
 	private int fps = 0;
+	private int desiredFrameRate = 14;
 	final FrameCounter fpsCounter = new FrameCounter();
-	int desiredFrameRate = 14;
+
 	int manualFrameDelayMillis = 0;
-	private final Settings settings;
+	private final AppSettings settings;
 	int maxSensitivity = 0;
 	private ArduinoManager arduino;
+	private JTable table;
+	private VideoDeviceManager videoDeviceManager;
 
 
 	public CameraTrack(){
-		this.settings= new Settings(); 
+		this.settings= new AppSettings(); 
 		this.arduino = ArduinoManager.getInstance();
+		this.videoDeviceManager = VideoDeviceManager.getInstance();
 		init();
 	}
 
@@ -189,38 +176,32 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		// for video streams via ffmpeg
 		if (args == null || args.length < 1 || ((args.length > 0) && (args[0].trim().equals("")) ) ) {
-			args = new String[] {"/dev/video0"};
+			VideoDevice lastDeviceUsed = videoDeviceManager.searchDevice(settings.get(AppSettings.LAST_VIDEO_DEVICE));
+			if (lastDeviceUsed == null) {
+				if (videoDeviceManager.getDeviceCount() > 0) {
+					args = new String[] {videoDeviceManager.retreiveDevices().firstElement().getLocation()};
+				}
+			} else {
+				args = new String[] {lastDeviceUsed.getLocation()};
+			}
 			System.out.println("Using default Stream: "+args[0]);
 		}
+		
 		String streamName = args[0];
-		String fileName = "pipe:1";
+		
 
-		boolean resolutionFilter = false;
-		String resolution = "640x480";
-		//String sourceVideoFile = "-i http://clipdownload.livestream.com/mogulus-user-files/chfirstassemblyalexandria/2013/12/22/dea9c13d-5a18-42b5-8725-e56c5f311c98.mp4/ac662c5bc242a22887b8bd427c3cfe3b/536C643A";
-		String sourceVideoFile = "-i /home/dan/Downloads/aj-office-prank.mov";
-		//String sourceVideoFile = "-i /home/dan/Desktop/churchtest.mp4";
-		String usbCamCmd = "ffmpeg "+sourceVideoFile+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
-		String streamCmd = "ffmpeg -probesize 32768 -i "+streamName+" -f mjpeg  -qscale "+fileName;
-		String cmd = "";
-
-		if (args[0].trim().toLowerCase().startsWith("/dev/")) {
-			cmd = "ffmpeg -f v4l2 -video_size "+resolution+ " -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
-		} else {
-			cmd = "ffmpeg -probesize 32768 -i "+args[0]+" -f mjpeg -r "+desiredFrameRate+((resolutionFilter ) ? " -crop="+resolution : "")+"  -qscale 2 "+fileName;
-		}
-
-		System.out.println("Running: "+cmd);
-		Process transcoder = Runtime.getRuntime().exec(cmd);
-
+		TranscoderHelper transcoderHelper = new FfmpegHelper();
+		transcoderHelper.setFrameRate(desiredFrameRate);
+		Process transcoder = transcoderHelper.getProcess(streamName);
 		//ImageStreamReader isr = new ImageStreamReader(transcoder.getInputStream(), this);
 		//isr.start();
 
 		System.out.print("\n"+ANSI_SAVE_POS);
 		while (true) {
 			try {
+				String errOutput;
 				MjpegFrame frame;
-				//BufferedReader brStdOut = new BufferedReader(new InputStreamReader());
+				BufferedReader brStdErr = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
 				MjpegInputStream brStdOut = new MjpegInputStream(transcoder.getInputStream());
 				long startTime = System.currentTimeMillis();
 
@@ -228,17 +209,19 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 				while ((frame = brStdOut.readMjpegFrame()) != null) {
 					//log.info("got frame in {}ms", System.currentTimeMillis() - startTime);
+					while (brStdErr.ready()) {
+						if ((errOutput = brStdErr.readLine()) != null) {
+							if (log.isDebugEnabled()) {
+								System.out.println(errOutput);
+							}
+						}
+					}
 					processFrame(frame);
 					startTime = System.currentTimeMillis();
 				}
 
 				int exitValue = transcoder.exitValue();
 				System.out.println("Got exit code "+exitValue);
-				String output;
-				BufferedReader brStdErr = new BufferedReader(new InputStreamReader(transcoder.getErrorStream()));
-				while ((output = brStdErr.readLine()) != null) {
-					System.out.print(output);
-				}
 				break;
 			} catch(EOFException ee) {
 				System.out.println("waiting for process to end..");
@@ -295,7 +278,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 			long startTime = System.currentTimeMillis();
 			int verticalCenter = Math.round(1.0f * bi.getHeight() * (1.0f * bandPos / 100.0f));
-			int halfBand = Math.round(1.0f * bandWidth / 100 * bi.getHeight() / 2);
+			int halfBand = Math.round(1.0f * bandHeight / 100 * bi.getHeight() / 2);
 			int top = verticalCenter - halfBand;
 			if (top < 0) {
 				top = 0;
@@ -310,8 +293,9 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			biGraphics.draw(new Rectangle(0, top, bi.getWidth() - 1, halfBand * 2));
 			
 			// these should start reversed to intersect properly
-			int croppedImageXMin =  bi.getWidth();
-			int croppedImageXMax = 0;
+			int sideMargin = bi.getWidth() - (int)(1.0 * bi.getWidth() * (1.0 * bandWidth / 100));
+			int croppedImageXMin =  bi.getWidth() - sideMargin;
+			int croppedImageXMax = sideMargin;
 
 			if (!this.adjusting) {
 
@@ -364,7 +348,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 						int centerOfChanges = (rightEdgeOfChanges + leftEdgeOfChanges) / 2;					
 						int fieldPosition = 100 * centerOfChanges / boxCounter;
 						int servoPosition = (180) * fieldPosition / 100;
-						log.info("[processImage] new position: "+servoPosition);
+						log.debug("[processImage] new position: "+servoPosition);
 						updatePosition(servoPosition);
 					} else {
 						updatePosition(0);
@@ -405,7 +389,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 				calibrate();
 			}
 
-			panel.setImage(bi);
+			imagePanel.setImage(bi);
 
 		} catch(Throwable t) {
 			System.err.println("This is bad: "+ t.getMessage());
@@ -508,6 +492,10 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		this.sensitivitySetting = sensitivitySetting;
 	}
 
+	private void setBandHeight(int i) {
+		this.bandHeight = i;
+	}
+	
 	private void setBandWidth(int i) {
 		this.bandWidth = i;
 	}
@@ -526,37 +514,29 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	 */
 	private void init() {		
 		
+		JPanel contentPaneScroller = new JPanel(); 
+		//contentPaneScroller.setAutoscrolls(true);
+		getContentPane().add(new JScrollPane(contentPaneScroller));
+		
 		setVisible(true);
-		setSize(587,658);
+		contentPaneScroller.setSize(770,658);
 
-		String size = settings.get("size", "");
-		if (!size.equals("")) {
-			String[] parts = size.split("x");
-			if (parts.length == 2) {
-				try {
-					setSize(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
-				} catch(Exception e) {
-					// do nothing -- we tried
-				}
-			}
-		}
-		
-		String location = settings.get("location");
-		if (!location.equals("")) {
-			String[] parts = location.split("x");
-			if (parts.length == 2) {
-				try {
-					setLocation(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
-				} catch(Exception e) {
-					// do nothing -- we tried
-				}
-			}
-		}
-		
-		addComponentListener(this);
 		setTitle("Camera Track");
-		getContentPane().add(panel);
 
+		initWindowSize();
+		
+		/*--------------------------------------------------------------
+		 * Image Panel
+		 --------------------------------------------------------------*/
+
+		contentPaneScroller.add(imagePanel);
+		imagePanel.setLayout(null);
+
+		
+		/*--------------------------------------------------------------
+		 * controls
+		 --------------------------------------------------------------*/
+		
 		JButton calibrateButton = new JButton("Calibrate");
 		calibrateButton.setLocation(100,100);
 		calibrateButton.addActionListener(new ActionListener() {
@@ -565,7 +545,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			}
 		});
 
-		getContentPane().add(calibrateButton);
+		contentPaneScroller.add(calibrateButton);
 
 		JRadioButton manualButton = new JRadioButton(MANUAL_CALIBRATION);
 		manualButton.setActionCommand(MANUAL_CALIBRATION);
@@ -574,7 +554,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		if (settings.get("calibration").equals("manual")) {
 			manualButton.setSelected(true);
 		}
-		getContentPane().add(manualButton);
+		contentPaneScroller.add(manualButton);
 
 		JRadioButton autoButton = new JRadioButton(AUTO_CALIBRATION);
 		autoButton.setActionCommand(AUTO_CALIBRATION);
@@ -583,14 +563,14 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		if (settings.get("calibration","auto").equals("auto")) {
 			autoButton.setSelected(true);
 		}
-		getContentPane().add(autoButton);
+		contentPaneScroller.add(autoButton);
 
 		ButtonGroup group = new ButtonGroup();
 		group.add(manualButton);
 		group.add(autoButton);
 
 		JLabel sensitivityLabel = new JLabel("Sensitivity");
-		getContentPane().add(sensitivityLabel);
+		contentPaneScroller.add(sensitivityLabel);
 		setSensitivitySetting(Integer.parseInt(settings.get("sensitivity","50")));
 		maxSensitivity = 100;
 		JSlider sensitivityAdjustment = new JSlider(JSlider.HORIZONTAL, 1, maxSensitivity, Math.abs(sensitivitySetting - maxSensitivity));
@@ -604,11 +584,11 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			}
 		});
 		sensitivityAdjustment.setSize(300, 25);
-		getContentPane().add(sensitivityAdjustment);
+		contentPaneScroller.add(sensitivityAdjustment);
 
-		JLabel bandwidthLabel = new JLabel("Band Height");
-		getContentPane().add(bandwidthLabel);
-		setBandWidth(Integer.parseInt(settings.get("bandwidth","50")));
+		JLabel bandWidthLabel = new JLabel("Band Width");
+		contentPaneScroller.add(bandWidthLabel);
+		setBandWidth(Integer.parseInt(settings.get(AppSettings.SETTING_BAND_WIDTH,"100")));
 		JSlider bandWidthAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, bandWidth);
 		bandWidthAdjustment.setMajorTickSpacing(10);
 		bandWidthAdjustment.addChangeListener(new ChangeListener() {
@@ -616,16 +596,35 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 			public void stateChanged(ChangeEvent e) {
 				JSlider bandWidth = (JSlider) e.getSource();
 				int newSensitivity = bandWidth.getValue();
-				settings.set("bandwidth", ""+newSensitivity);
-				setBandWidth((newSensitivity > 0) ? newSensitivity : 1);
+				settings.set(AppSettings.SETTING_BAND_WIDTH, ""+newSensitivity);
+				setBandHeight((newSensitivity > 0) ? newSensitivity : 1);
 			}
 
 		});
 		bandWidthAdjustment.setSize(300, 25);
-		getContentPane().add(bandWidthAdjustment);
+		contentPaneScroller.add(bandWidthAdjustment);
+		
+		
+		JLabel bandHeightLabel = new JLabel("Band Height");
+		contentPaneScroller.add(bandHeightLabel);
+		setBandHeight(Integer.parseInt(settings.get(AppSettings.SETTING_BAND_HEIGHT,"50")));
+		JSlider bandHeightAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, bandHeight);
+		bandHeightAdjustment.setMajorTickSpacing(10);
+		bandHeightAdjustment.addChangeListener(new ChangeListener() {
+
+			public void stateChanged(ChangeEvent e) {
+				JSlider bandHeight = (JSlider) e.getSource();
+				int newSensitivity = bandHeight.getValue();
+				settings.set(AppSettings.SETTING_BAND_HEIGHT, ""+newSensitivity);
+				setBandHeight((newSensitivity > 0) ? newSensitivity : 1);
+			}
+
+		});
+		bandHeightAdjustment.setSize(300, 25);
+		contentPaneScroller.add(bandHeightAdjustment);
 		
 		JLabel bandPosLabel = new JLabel("Band Position");
-		getContentPane().add(bandPosLabel);
+		contentPaneScroller.add(bandPosLabel);
 		setBandPosition(Integer.parseInt(settings.get("position", "50")));
 		JSlider bandPosAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 100, bandPos);
 		bandPosAdjustment.setMajorTickSpacing(10);
@@ -653,11 +652,11 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		});
 		bandPosAdjustment.setSize(300, 25);
-		getContentPane().add(bandPosAdjustment);
+		contentPaneScroller.add(bandPosAdjustment);
 
 
 		JLabel colorVarianceLabel = new JLabel("Color Variance");
-		getContentPane().add(colorVarianceLabel);
+		contentPaneScroller.add(colorVarianceLabel);
 		setAllowedColorVariance(Integer.parseInt(settings.get("colorshift", "50")));
 		JSlider colorVarianceAdjustment = new JSlider(JSlider.HORIZONTAL, 1, 200, allowedColorVariance);
 		colorVarianceAdjustment.setMajorTickSpacing(10);
@@ -672,87 +671,153 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 		});
 		bandPosAdjustment.setSize(300, 25);
-		getContentPane().add(bandPosAdjustment);
+		contentPaneScroller.add(bandPosAdjustment);
+		
+		JPanel configPanel = new JPanel();
 
 
-		GroupLayout layout = new GroupLayout(getContentPane());
-		getContentPane().setLayout(layout);
+		GroupLayout layout = new GroupLayout(contentPaneScroller);
+		layout.setHorizontalGroup(
+			layout.createParallelGroup(Alignment.LEADING)
+				.addComponent(sensitivityLabel)
+				.addComponent(sensitivityAdjustment, GroupLayout.DEFAULT_SIZE, 740, Short.MAX_VALUE)
+				.addComponent(bandWidthLabel)
+				.addComponent(bandWidthAdjustment, GroupLayout.DEFAULT_SIZE, 740, Short.MAX_VALUE)
+				.addComponent(bandHeightLabel)
+				.addComponent(bandHeightAdjustment, GroupLayout.DEFAULT_SIZE, 740, Short.MAX_VALUE)
+				.addComponent(bandPosLabel)
+				.addComponent(bandPosAdjustment, GroupLayout.DEFAULT_SIZE, 740, Short.MAX_VALUE)
+				.addComponent(colorVarianceLabel)
+				.addComponent(colorVarianceAdjustment, GroupLayout.DEFAULT_SIZE, 740, Short.MAX_VALUE)
+				.addGroup(layout.createSequentialGroup()
+					.addGroup(layout.createParallelGroup(Alignment.LEADING)
+						.addGroup(layout.createSequentialGroup()
+							.addComponent(calibrateButton, GroupLayout.DEFAULT_SIZE, 129, Short.MAX_VALUE)
+							.addGap(10)
+							.addComponent(manualButton, GroupLayout.DEFAULT_SIZE, 188, Short.MAX_VALUE)
+							.addGap(10)
+							.addComponent(autoButton, GroupLayout.DEFAULT_SIZE, 169, Short.MAX_VALUE))
+						.addComponent(imagePanel, GroupLayout.DEFAULT_SIZE, 506, Short.MAX_VALUE))
+					.addPreferredGap(ComponentPlacement.RELATED)
+					.addComponent(configPanel, GroupLayout.PREFERRED_SIZE, 216, GroupLayout.PREFERRED_SIZE)
+					.addGap(24))
+		);
+		layout.setVerticalGroup(
+			layout.createParallelGroup(Alignment.TRAILING)
+				.addGroup(layout.createSequentialGroup()
+					.addContainerGap()
+					.addGroup(layout.createParallelGroup(Alignment.TRAILING)
+						.addComponent(imagePanel, GroupLayout.DEFAULT_SIZE, 370, Short.MAX_VALUE)
+						.addComponent(configPanel, GroupLayout.PREFERRED_SIZE, 233, GroupLayout.PREFERRED_SIZE))
+					.addGroup(layout.createParallelGroup(Alignment.BASELINE)
+						.addGap(10)
+						.addComponent(calibrateButton)
+						.addComponent(manualButton)
+						.addComponent(autoButton))
+					.addGap(10)
+					.addComponent(sensitivityLabel)
+					.addGap(10)
+					.addComponent(sensitivityAdjustment, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+					.addGap(10)
+					.addComponent(bandWidthLabel)
+					.addGap(10)
+					.addComponent(bandWidthAdjustment, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+					.addGap(10)
+					.addComponent(bandHeightLabel)
+					.addGap(10)
+					.addComponent(bandHeightAdjustment, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+					.addGap(10)
+					.addComponent(bandPosLabel)
+					.addGap(10)
+					.addComponent(bandPosAdjustment, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+					.addGap(10)
+					.addComponent(colorVarianceLabel)
+					.addGap(10)
+					.addComponent(colorVarianceAdjustment, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
+		);
+		
+		
+		
+		/*--------------------------------------------------------------
+		 * config Box
+		 --------------------------------------------------------------*/
+		
+		configPanel.setLayout(null);
+		JScrollPane scrollPane = new JScrollPane();
+		scrollPane.setBounds(0, 25, 216, 105);
+		configPanel.add(scrollPane);
+		
+		table = new JTable();
+		final CameraSettingsTabelModel cstm = new CameraSettingsTabelModel();
+		table.setModel(cstm);
+		table.getInputMap(JTable.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER,0), "selectNextColumnCell");
+		scrollPane.setViewportView(table);
+
+		
+		JComboBox<VideoDevice> videoSource = new JComboBox<>();
+		videoSource.setModel(new DefaultComboBoxModel<VideoDevice>(videoDeviceManager.retreiveDevices()));
+		videoSource.setBounds(0, 0, 216, 24);
+		videoSource.addActionListener(new ActionListener() {
+
+			@Override
+			public void actionPerformed(ActionEvent ae) {
+				if (ae.getActionCommand().equals("comboBoxChanged")) {
+					try {
+						@SuppressWarnings("unchecked")
+						VideoDevice newDevice = (VideoDevice) ((JComboBox<VideoDevice>)ae.getSource()).getSelectedItem();
+						settings.set(AppSettings.LAST_VIDEO_DEVICE, newDevice.getName());
+						videoDeviceManager.setCurrentDevice(newDevice);
+						videoDeviceManager.getDeviceSettings();
+						cstm.loadDeviceProperties();
+					} catch (Exception e) {
+						log.error("[videoSourceComboBox:{}] {}", ae.getActionCommand(), e.getMessage(), e);
+					}
+					
+					
+				} else {
+					log.trace("[videoSourceComboBox] uncaught action: {}", ae.getActionCommand());
+				}
+			}
+			
+		});
+		configPanel.add(videoSource);
+		settings.save();
+				
+		contentPaneScroller.setLayout(layout);
 		layout.setAutoCreateGaps(true);
 		layout.setAutoCreateContainerGaps(true);
 
-		layout.setHorizontalGroup(
-				layout.createParallelGroup(Alignment.LEADING)
-				.addGroup(layout.createSequentialGroup()
-						.addGroup(layout.createParallelGroup(Alignment.LEADING)
-								.addGroup(layout.createSequentialGroup()
-										.addComponent(panel, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-										)
-										.addGroup(layout.createSequentialGroup()
-												.addComponent(calibrateButton, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-												.addGap(10)
-												.addComponent(manualButton, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-												.addGap(10)
-												.addComponent(autoButton, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-												)
-												.addGroup(layout.createSequentialGroup()
-														.addComponent(sensitivityLabel)
-														)
-														.addGroup(layout.createSequentialGroup()
-																.addComponent(sensitivityAdjustment, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-																)
-																.addGroup(layout.createSequentialGroup()
-																		.addComponent(bandwidthLabel)
-																		)
-																		.addGroup(layout.createSequentialGroup()
-																				.addComponent(bandWidthAdjustment, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-																				)
-																.addGroup(layout.createSequentialGroup()
-																		.addComponent(bandPosLabel)
-																		)
-																		.addGroup(layout.createSequentialGroup()
-																				.addComponent(bandPosAdjustment, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-																				)
-																				.addGroup(layout.createSequentialGroup()
-																						.addComponent(colorVarianceLabel)
-																						)
-																						.addGroup(layout.createSequentialGroup()
-																								.addComponent(colorVarianceAdjustment, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-																								)
-
-								)
-						)
-				);
-
-
-		layout.setVerticalGroup(
-				layout.createParallelGroup(Alignment.LEADING)
-				.addGroup(layout.createSequentialGroup()
-						.addComponent(panel)
-						.addGroup(layout.createParallelGroup(Alignment.BASELINE)
-								.addGap(10)
-								.addComponent(calibrateButton)
-								.addComponent(manualButton)
-								.addComponent(autoButton)
-								)
-								.addGap(10)
-								.addComponent(sensitivityLabel)
-								.addGap(10)
-								.addComponent(sensitivityAdjustment)
-								.addGap(10)
-								.addComponent(bandwidthLabel)
-								.addGap(10)
-								.addComponent(bandWidthAdjustment)
-								.addGap(10)
-								.addComponent(bandPosLabel)
-								.addGap(10)
-								.addComponent(bandPosAdjustment)
-								.addGap(10)
-								.addComponent(colorVarianceLabel)
-								.addGap(10)
-								.addComponent(colorVarianceAdjustment)
-						));
-
+		addComponentListener(this);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
+	}
+
+	/**
+	 * 
+	 */
+	private void initWindowSize() {
+		String size = settings.get("size", "");
+		if (!size.equals("")) {
+			String[] parts = size.split("x");
+			if (parts.length == 2) {
+				try {
+					setSize(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+				} catch(Exception e) {
+					// do nothing -- we tried
+				}
+			}
+		}
+		
+		String location = settings.get("location");
+		if (!location.equals("")) {
+			String[] parts = location.split("x");
+			if (parts.length == 2) {
+				try {
+					setLocation(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+				} catch(Exception e) {
+					// do nothing -- we tried
+				}
+			}
+		}
 	}
 
 	@Override
@@ -774,5 +839,4 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	@Override
 	public void componentHidden(ComponentEvent e) {
 	}
-
 }

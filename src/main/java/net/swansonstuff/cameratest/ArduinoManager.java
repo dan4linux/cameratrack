@@ -24,6 +24,7 @@ public class ArduinoManager {
 	int[] positions = new int[30];
 	int nextPosition = 0;
 	ArduinoHandler arduino;
+	boolean enabled = false;
 
 	/**
 	 * 
@@ -31,7 +32,7 @@ public class ArduinoManager {
 	private ArduinoManager() {
 		initTimer();
 		arduino = new ArduinoHandler();
-		arduino.initialize();
+		this.enabled = arduino.initialize();
 	}
 	
 	public static synchronized ArduinoManager getInstance() {
@@ -76,6 +77,7 @@ public class ArduinoManager {
 	}
 	
 	public synchronized void updatePosition(int position) {
+		if (!enabled) return;
 		positions[nextPosition++] = position;
 		if (nextPosition >= positions.length) {
 			nextPosition = 0;
