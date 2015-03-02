@@ -111,7 +111,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 	int bandPos = 50;
 	private int sensitivitySetting = 15;
 	int allowedColorVariance = 100;			
-	private boolean autoCalibration = true;
+	private boolean autoCalibration;
 	public static final String	MANUAL_CALIBRATION	= "Manual Calibration";
 	public static final String	AUTO_CALIBRATION	= "Auto Calibration";
 
@@ -143,6 +143,7 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		this.settings= new AppSettings(); 
 		this.arduino = ArduinoManager.getInstance();
 		this.videoDeviceManager = VideoDeviceManager.getInstance();
+		this.autoCalibration = Boolean.parseBoolean(settings.get(AppSettings.SETTING_CALIBRATION, "false"));
 		init();
 	}
 
@@ -476,10 +477,10 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 
 	public void actionPerformed(ActionEvent e) {
 		if (e.getActionCommand().equals(MANUAL_CALIBRATION)) {
-			settings.set("calibration", "manual");
+			settings.set(AppSettings.SETTING_CALIBRATION, "manual");
 			this.autoCalibration = false;
 		} else if (e.getActionCommand().equals(AUTO_CALIBRATION)) {
-			settings.set("calibration", "auto");
+			settings.set(AppSettings.SETTING_CALIBRATION, "auto");
 			this.autoCalibration = true;
 		}
 	}
@@ -551,18 +552,14 @@ public class CameraTrack extends JFrame implements MjpegParserListener, ActionLi
 		manualButton.setActionCommand(MANUAL_CALIBRATION);
 		manualButton.setBounds(18, 8, 134, 23);
 		manualButton.addActionListener(this);
-		if (settings.get("calibration").equals("manual")) {
-			manualButton.setSelected(true);
-		}
+		manualButton.setSelected(!autoCalibration);
 		contentPaneScroller.add(manualButton);
 
 		JRadioButton autoButton = new JRadioButton(AUTO_CALIBRATION);
 		autoButton.setActionCommand(AUTO_CALIBRATION);
 		autoButton.setBounds(18, 8, 134, 23);
 		autoButton.addActionListener(this);
-		if (settings.get("calibration","auto").equals("auto")) {
-			autoButton.setSelected(true);
-		}
+		autoButton.setSelected(autoCalibration);
 		contentPaneScroller.add(autoButton);
 
 		ButtonGroup group = new ButtonGroup();
